@@ -3,12 +3,17 @@
 # and the live dashboard. For agents that cannot keep a command running in the background or stream its
 # output (Cursor, Codex, Gemini CLI, Copilot, ...). Then loop on next-question.sh.
 # --answer also starts the standalone answerer (answer.py: your own model, e.g. Ollama, no coding agent
-# needed). Other arguments go to listen.py, e.g. --no-mic. Logs: $ONCUE_HOME/run/*.log
+# needed). --float also opens the floating answer window (float.py: small, always on top; needs a desktop
+# session and python3 with tkinter). Other arguments go to listen.py, e.g. --no-mic. Logs: $ONCUE_HOME/run/*.log
 source "$(dirname "$0")/_lib.sh"
 S="$SKILL_DIR/scripts"
-ANSWER=0; LISTEN_ARGS=()
+ANSWER=0; FLOAT=0; LISTEN_ARGS=()
 for a in "$@"; do
-  if [ "$a" = "--answer" ]; then ANSWER=1; else LISTEN_ARGS+=("$a"); fi
+  case "$a" in
+    --answer) ANSWER=1 ;;
+    --float) FLOAT=1 ;;
+    *) LISTEN_ARGS+=("$a") ;;
+  esac
 done
 [ -x "$HOME_DIR/.venv/bin/python" ] || { echo "not set up yet: run scripts/setup.sh"; exit 1; }
 
@@ -41,6 +46,19 @@ if [ "$ANSWER" = 1 ]; then
   else
     nohup python3 "$S/answer.py" > /dev/null 2>> "$RUN_DIR/answer.log" < /dev/null &
     echo "answerer: started (${ONCUE_PROVIDER:-ollama}; log $RUN_DIR/answer.log)"
+  fi
+fi
+
+if [ "$FLOAT" = 1 ]; then
+  if alive float; then
+    echo "floating window: already running"
+  elif [ -z "${DISPLAY:-}" ]; then
+    echo "floating window: not started (no desktop session: \$DISPLAY is not set)"
+  elif ! python3 -c "import tkinter" 2>/dev/null; then
+    echo "floating window: not started (python3 has no tkinter; Debian/Ubuntu: sudo apt install python3-tk)"
+  else
+    nohup python3 "$S/float.py" > /dev/null 2>> "$RUN_DIR/float.log" < /dev/null &
+    echo "floating window: started"
   fi
 fi
 

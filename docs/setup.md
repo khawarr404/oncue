@@ -88,6 +88,7 @@ The better the cheat sheet, the better the answers.
 |---|---|
 | *"Prep for my call"* | The agent asks for your CV, the job ad or agenda, the company and attendees, researches them and writes `prep.md`. |
 | *"Start oncue"* | Listener, question watcher and dashboard start. Open `http://127.0.0.1:8765`. |
+| *"Start oncue with the floating window"* | The same, plus a small always-on-top answer window. |
 | *"I'm on speakers"* | Starts with `--no-mic` so others are not transcribed twice. |
 | *"Interview mode"* | Switches the answer style (also `sales`, `client`, `standup`, `negotiation`, `meeting`). |
 | *"Check transcript"* | The agent reads recent lines and answers anything it missed. |
@@ -124,6 +125,26 @@ In the dashboard (also in compact view): **Answer** (`A`) answers the latest thi
 alert fired, **Clarify** (`K`) restates what they just asked, **Recap** (`R`) gives the last 5 minutes in
 bullets, **Follow-up** (`F`) suggests questions to ask them. The answer appears in the dashboard within
 seconds, like any other.
+
+### Floating answer window
+
+A small window that stays on top of the call and shows the latest suggested answer (large), the question it
+answers, whether oncue is listening and the mode. Open it with:
+
+```bash
+skills/oncue/scripts/up.sh --float          # with everything else, or on its own:
+python3 skills/oncue/scripts/float.py       # needs the dashboard running (up.sh starts it)
+```
+
+Buttons and keys as on the dashboard: **Answer** `A`, **Clarify** `K`, **Recap** `R`, **Follow-up** `F`,
+**Copy** `Y`, compact view (answer only) `C`, opacity `+` / `-` (or the slider). Move and resize it like any
+window; position, size, opacity and compact are remembered in `~/oncue/float.json`. `stop.sh` closes it
+(the dashboard stays unless you add `--all`). If the dashboard is not running the window says so and keeps
+retrying. `python3 skills/oncue/scripts/float.py --check` prints what it would show, without a window.
+
+It needs a desktop session and Python's tkinter (Debian/Ubuntu: `sudo apt install python3-tk`). On GNOME
+with Wayland it runs through XWayland. The buttons use the dashboard's per-start token, which the
+dashboard writes to `~/oncue/run/dashboard.token` (readable only by you, removed when it stops).
 
 ### Claude Code
 

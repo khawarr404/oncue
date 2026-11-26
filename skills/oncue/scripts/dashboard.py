@@ -5,9 +5,11 @@ Serves http://127.0.0.1:8765 (this computer only). The page polls /api/state, wh
 transcript.txt, answers.md, questions.log and session.json in $ONCUE_HOME. Standard library only;
 the page has no external files, fonts or scripts.
 
-Two POST endpoints change things, and only for the page this process served (any website you visit could
-send requests to 127.0.0.1): each request needs the random token embedded in the page (X-Oncue-Token header),
-and requests for other host names are refused.
+Two POST endpoints change things, and only for the page this process served or a local program run by the
+same user (any website you visit could send requests to 127.0.0.1): each request needs the random token
+(X-Oncue-Token header), which is embedded in the page and written to run/dashboard.token (mode 0600, removed
+on exit) for local clients such as float.py. Requests for other host names, from another site's Origin, or
+marked cross-site by the browser are refused.
   POST /api/action {"action": "answer|clarify|recap|followup"}  appends "[HH:MM:SS] ACTION: recap" to the
        transcript; watch.sh passes it to the agent like a question.
   POST /api/mode {"mode": "interview"}                          writes mode.txt (same as scripts/mode.sh).
@@ -20,6 +22,7 @@ import json
 import os
 import re
 import secrets
+import signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -371,9 +374,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path not in ("/api/action", "/api/mode"):
             return self.reply(404, {"error": "Not found"})
+        # A browser sends Origin (and Sec-Fetch-Site) with every POST, so another site's page is refused here.
+        # Local programs such as float.py send neither; they still need the token, which only the served page
+        # and run/dashboard.token (readable by this user only) hold.
         origin = self.headers.get("Origin")
         token = (self.headers.get("X-Oncue-Token") or "").encode("utf-8", "replace")
         if (not self.local_host() or (origin and urlsplit(origin).hostname not in LOCAL_HOSTS)
+                or (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site"
                 or not hmac.compare_digest(token, TOKEN.encode())):
             return self.reply(403, {"error": "Forbidden: reload the page"})
         try:
@@ -397,16 +404,48 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def write_token(path):
+    """Write TOKEN to path, readable by this user only (a new file, then renamed, so readers never see half)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)  # the mode above is ignored if the file already existed
+        os.write(fd, TOKEN.encode())
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+
+
+def remove_token(path):
+    """Remove path if it still holds this process's token (a newer dashboard may have replaced it)."""
+    try:
+        if path.read_text().strip() == TOKEN:
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _exit_on_term(*_):
+    raise SystemExit(0)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=int(os.environ.get("ONCUE_PORT") or 8765))
     port = ap.parse_args().port
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)  # fails (port in use) before touching run/
     pid_file = HOME / "run" / "dashboard.pid"
+    token_file = HOME / "run" / "dashboard.token"
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
+    signal.signal(signal.SIGTERM, _exit_on_term)  # stop.sh sends SIGTERM: leave through the finally below
     print(f"dashboard: http://127.0.0.1:{port}", flush=True)
     try:
+        write_token(token_file)
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        remove_token(token_file)
+        server.server_close()

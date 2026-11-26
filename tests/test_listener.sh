@@ -45,7 +45,8 @@ class WhisperModel:
 EOF
 export PATH="$WORK/bin:$PATH" PYTHONPATH="$WORK/py"
 
-bash "$S/up.sh" --answer > "$WORK/up.out" 2>&1
+# --float with no desktop session: up.sh must skip the window and keep the flag away from listen.py.
+env -u DISPLAY bash "$S/up.sh" --answer --float > "$WORK/up.out" 2>&1
 H="$ONCUE_HOME"
 PID=$(cat "$H/run/listen.pid" 2>/dev/null)
 [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null && pass "up.sh: listener running (pid file)" || { fail "up.sh: listener"; cat "$WORK/up.out" "$H/run/listen.log"; }
@@ -57,6 +58,8 @@ grep -q "^\[..:..:..\] ME: " "$T" && pass "listen.py: mic stream" || fail "liste
 APID=$(cat "$H/run/answer.pid" 2>/dev/null)
 [ -n "$APID" ] && kill -0 "$APID" 2>/dev/null && ! grep -q "unrecognized arguments" "$H/run/listen.log" \
   && pass "up.sh --answer: answerer running, flag not passed to listen.py" || { fail "up.sh --answer"; cat "$WORK/up.out"; }
+grep -q "^floating window: not started (no desktop session" "$WORK/up.out" && [ ! -f "$H/run/float.pid" ] \
+  && pass "up.sh --float: skipped without a display, flag not passed to listen.py" || { fail "up.sh --float"; cat "$WORK/up.out"; }
 OUT=$(bash "$S/next-question.sh" 10)
 echo "$OUT" | grep -q "^QUESTION .*THEM: Sam, is the roadmap ready?" && pass "up.sh + next-question: question delivered" || { fail "next-question via up.sh"; echo "$OUT"; }
 

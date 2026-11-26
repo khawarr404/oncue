@@ -42,9 +42,12 @@ topic rules alert, so suggest adding topic words.
    the maximum. Re-arm it each time it expires while the meeting runs. Each output line is one question.
 3. Start the live web view if it isn't running (`curl -s 127.0.0.1:8765/api/state` fails): run
    `python3 $SKILL/scripts/dashboard.py` with `run_in_background`.
+4. If the user wants the floating window: run `python3 $SKILL/scripts/float.py` with `run_in_background`
+   (after the dashboard).
 
 **B. You can only run one command at a time (Cursor, Codex, Gemini CLI, Copilot, Windsurf, ...):**
 1. Run `$SKILL/scripts/up.sh` (starts listener, question watcher and dashboard detached; returns at once).
+   Add `--float` if the user wants the floating window.
 2. Loop: run `$SKILL/scripts/next-question.sh 240`. It blocks until a question arrives and prints
    `QUESTION <line>` (answer it as below, then call it again), `NONE` (nothing yet: call it again), or
    `STOPPED` (meeting over: write notes). Questions that arrive between calls are kept, never lost. Keep
@@ -54,6 +57,10 @@ Then, either way:
 - Give the user http://127.0.0.1:8765 (the question just heard, the suggested answer in large text with a
   copy button, earlier answers, live transcript, the mode menu and quick-action buttons; `C` toggles a
   compact answer-only view for a small window beside the call; `A` `K` `R` `F` are the quick actions).
+- Floating window: if the user asks for answers "on top of the call", "in a small window" or "the floating
+  window", start it as above. It is a small always-on-top window with the latest answer, the quick actions,
+  Copy, the mode menu, `C` compact and `+` / `-` opacity; it needs a desktop session and Python's tkinter
+  (`up.sh` says if it could not start it).
 - Read now, so answers come quickly later: `CONTEXT.md`, `prep.md` if it exists, and the current mode file
   (`$SKILL/scripts/mode.sh --path` prints it). Tell the user in one line that you are listening and in
   which mode.
@@ -144,8 +151,8 @@ goes under watch-outs as a gap with an honest answer.
 
 ## "Stop oncue"
 
-1. Run `$SKILL/scripts/stop.sh` (listener, watcher and answerer; the dashboard keeps showing the meeting,
-   `--all` stops it too). In Claude Code also stop the Monitor (TaskStop).
+1. Run `$SKILL/scripts/stop.sh` (listener, watcher, answerer and the floating window; the dashboard keeps
+   showing the meeting, `--all` stops it too). In Claude Code also stop the Monitor (TaskStop).
 2. Read the whole transcript and write `notes.md` in the session folder:
    - **Summary** (3-5 lines)
    - **Decisions**

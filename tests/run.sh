@@ -19,7 +19,7 @@ trap cleanup EXIT
 
 # 1. Syntax
 for f in "$S"/*.sh "$REPO"/install.sh "$REPO"/tests/*.sh; do bash -n "$f" || fail "syntax $f"; done
-python3 -m py_compile "$S/listen.py" "$S/dashboard.py" "$S/answer.py" && pass "syntax" || fail "python syntax"
+python3 -m py_compile "$S/listen.py" "$S/dashboard.py" "$S/answer.py" "$S/float.py" && pass "syntax" || fail "python syntax"
 
 # 2. Fake meeting: a session folder, LATEST pointer, and a stand-in listener process.
 H="$ONCUE_HOME"; SESSION="$H/sessions/2026-01-01-1000"; T="$SESSION/transcript.txt"
@@ -90,5 +90,8 @@ bash "$REPO/tests/test_actions_modes.sh" || FAIL=1
 
 # 8. Standalone answerer against a stand-in model server.
 bash "$REPO/tests/test_answer.sh" || FAIL=1
+
+# 9. Floating answer window: dashboard token file, local client POSTs, float.py logic (window only with a display).
+bash "$REPO/tests/test_float.sh" || FAIL=1
 
 [ "$FAIL" = 0 ] && echo "all tests passed" || { echo "some tests failed"; exit 1; }

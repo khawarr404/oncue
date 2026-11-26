@@ -9,9 +9,10 @@
 | `next-question.sh` | Blocking "give me the next question" for agents that cannot stream output. Keeps a read position per meeting. |
 | `notify.sh` | Desktop pop-up and append to `answers.md`. |
 | `dashboard.py` | Local web page (standard library only, no external files) reading the session folder; quick-action buttons and mode menu. |
+| `float.py` | Optional always-on-top answer window (tkinter, standard library only). Reads the dashboard's `/api/state`; its buttons use the dashboard's POST endpoints. |
 | `mode.sh` | Lists modes or sets the current one (`mode.txt`). |
 | `answer.py` | Optional answerer with your own model (Ollama, Anthropic or OpenAI-compatible), standard library only. |
-| `start.sh` / `up.sh` / `stop.sh` | Start in foreground / start everything detached (`--answer` adds the answerer) / stop. Processes are tracked with pid files in `~/oncue/run/`. |
+| `start.sh` / `up.sh` / `stop.sh` | Start in foreground / start everything detached (`--answer` adds the answerer, `--float` the floating window) / stop (also closes the floating window; `--all` also stops the dashboard). Processes are tracked with pid files in `~/oncue/run/`. |
 
 ## Alert rules
 
@@ -39,9 +40,12 @@ they reach the agent by the same path as questions: the Monitor stream, `next-qu
 the transcript view and the question count.
 
 Any web page you visit can send requests to `127.0.0.1`, so the dashboard only accepts these requests
-from its own page: each one must carry a random token that is new every time the dashboard starts and
-is only in the page it served, the `Host` must be `127.0.0.1` or `localhost`, and only the four action
-names (and known mode names) are accepted. The dashboard listens on `127.0.0.1` only.
+from its own page or a local program you run: each one must carry a random token that is new every time
+the dashboard starts. The token is in the page it served and in `~/oncue/run/dashboard.token` (mode
+0600, readable only by you, removed when the dashboard stops), where `float.py` reads it. The `Host` must
+be `127.0.0.1` or `localhost`; a request with another site's `Origin`, or that the browser marks
+`Sec-Fetch-Site: cross-site`, is refused even with the token; and only the four action names (and known
+mode names) are accepted. The dashboard listens on `127.0.0.1` only.
 
 ## Modes
 

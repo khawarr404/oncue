@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Floating answer window (`scripts/float.py`, `up.sh --float`): a small always-on-top window with the
+  latest suggested answer in large text, the question it answers, a status line, "question heard… answer
+  coming", the quick actions, Copy, a mode menu, compact view and an opacity slider. Same keys as the
+  dashboard (`A` `K` `R` `F` `Y` `C`, plus `+` / `-` for opacity). Remembers position, size, opacity and
+  compact in `float.json`. tkinter, standard library only. `stop.sh` closes it.
+- The dashboard writes its per-start token to `run/dashboard.token` (mode 0600, removed on exit) so local
+  programs such as the floating window can use the POST endpoints. Browser protections are unchanged, and
+  requests marked `Sec-Fetch-Site: cross-site` are now refused too.
+
 - Ollama: thinking turned off by default (`think: false`) so thinking models such as qwen3 answer
   quickly instead of spending the token budget on reasoning. `ONCUE_OLLAMA_THINK=1` turns it back on.
 

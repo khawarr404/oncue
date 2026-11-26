@@ -28,6 +28,10 @@ Copilot, Windsurf** and any other agent that can run shell commands.
 - **Desktop pop-up** for every answer, plus a **live dashboard** at `http://127.0.0.1:8765`: the
   question just heard, the answer in large type with a copy button, earlier answers and the transcript.
   Press `C` for a compact view beside the call, `S` for a sound cue, `Y` to copy.
+- **Floating answer window** (`up.sh --float`): a small always-on-top window that shows the latest
+  suggested answer and the question it answers, so you can read it while looking at the call. Same quick
+  actions and keys as the dashboard, a mode menu, Copy, compact (`C`, answer only) and an opacity slider
+  (`+` / `-`) for comfort. It's a normal window and appears in screen shares like any other.
 - **Quick actions** on the dashboard, also in compact view: **Answer** (`A`, the latest thing they asked,
   even if no alert fired), **Clarify** (`K`, what they just asked in plain words), **Recap** (`R`, the last
   5 minutes in bullets), **Follow-up** (`F`, good questions to ask them).
@@ -53,7 +57,7 @@ Copilot, Windsurf** and any other agent that can run shell commands.
 | | Live mode (`oncue`) | Paste mode (`oncue-paste`) |
 |---|---|---|
 | OS | **Linux with PipeWire** (Ubuntu 22.10+, Fedora 34+, most current distros) | Any |
-| Tools | Python 3.10+, `pw-record`; optional `notify-send`, `uv` | None |
+| Tools | Python 3.10+, `pw-record`; optional `notify-send`, `uv`, tkinter (`python3-tk`, floating window) | None |
 | Disk | About 1.5 GB (Python packages + `small.en` speech model) | None |
 | Agent | Any agent that runs shell commands | Any chat agent |
 
@@ -77,7 +81,8 @@ Then, in your agent:
    your CV, the job ad or agenda and who you are meeting.
 3. Just before the call: *"Start oncue."* (Add *"I'm on speakers"* if you have no headphones, or
    *"interview mode"* to switch mode.)
-4. Open `http://127.0.0.1:8765` next to the call.
+4. Open `http://127.0.0.1:8765` next to the call, or ask for the floating window (*"start oncue with the
+   floating window"*, or `up.sh --float`).
 5. After the call: *"Stop oncue."* Notes land in `~/oncue/sessions/<date-time>/notes.md`.
 
 Per-tool install details (plugin marketplace, Cursor, Codex, Gemini CLI, Copilot, Windsurf, `npx skills`):
@@ -105,6 +110,7 @@ Everything lives in `~/oncue` (change with `ONCUE_HOME`):
 | `prep.md` | Prep for the next call (written by *"prep for my call"*). |
 | `mode.txt` | The current mode (missing means `meeting`). |
 | `modes/<name>.md` | Your own modes, or your versions of built-in ones. |
+| `float.json` | The floating window's position, size, opacity and compact setting. |
 | `sessions/<date-time>/` | `transcript.txt`, `questions.log`, `answers.md`, `notes.md` for each meeting. |
 
 ## How it works
@@ -113,6 +119,7 @@ Everything lives in `~/oncue` (change with `ONCUE_HOME`):
 speakers ─┐                     ┌─> transcript.txt ─> watch.sh ─> questions.log ─┬─> agent (or answer.py) writes answer
           ├─ pw-record ─> listen.py (faster-whisper)                            │    └─> notify.sh: pop-up + answers.md
 mic ──────┘                                                                     └─> dashboard.py (127.0.0.1:8765)
+                                                                                      └─> float.py (always-on-top window)
 dashboard quick actions (Answer, Clarify, Recap, Follow-up) ─> "ACTION: recap" lines in transcript.txt
 ```
 
@@ -126,7 +133,7 @@ More in [docs/how-it-works.md](docs/how-it-works.md): alert rules, speech model 
 | `ONCUE_MODEL` | `small.en` | faster-whisper model (`base.en` for slow machines, `small` for non-English) |
 | `ONCUE_THREADS` | `min(6, cores)` | CPU threads for speech |
 | `ONCUE_BEAM` | `1` | Beam size (5 is slower and was no more accurate) |
-| `ONCUE_PORT` | `8765` | Dashboard port |
+| `ONCUE_PORT` | `8765` | Dashboard port (the floating window uses it too) |
 | `ONCUE_NAME` | from `name.txt` | Override the name list (`Sam|Sem`) |
 | `ONCUE_NO_POPUP` | unset | Set to skip desktop pop-ups |
 | `ONCUE_PROVIDER` | `ollama` | Answerer (`up.sh --answer`): `ollama`, `anthropic` or `openai` |
@@ -139,7 +146,8 @@ More in [docs/how-it-works.md](docs/how-it-works.md): alert rules, speech model 
 | `ONCUE_OLLAMA_THINK` | unset | Set to `1` to let thinking models (qwen3, deepseek-r1) reason first; off by default because it is slow |
 
 Start options: `--no-mic` (on speakers, to avoid hearing others twice), `--language de` (with a
-multilingual model), `--model base.en`, `--answer` (`up.sh` only: also start the answerer).
+multilingual model), `--model base.en`, `--answer` (`up.sh` only: also start the answerer), `--float`
+(`up.sh` only: also open the floating answer window; needs a desktop session and Python's tkinter).
 
 ## Own model (Ollama or an API)
 
