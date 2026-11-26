@@ -1,25 +1,41 @@
 """Live copilot page for the current meeting: the latest suggested answer in large type, the question that was
-just heard (before its answer arrives), earlier answers and the live transcript.
+just heard (before its answer arrives), earlier answers, the live transcript, quick actions and the mode.
 
 Serves http://127.0.0.1:8765 (this computer only). The page polls /api/state, which reads sessions/LATEST,
 transcript.txt, answers.md, questions.log and session.json in $ONCUE_HOME. Standard library only;
 the page has no external files, fonts or scripts.
+
+Two POST endpoints change things, and only for the page this process served (any website you visit could
+send requests to 127.0.0.1): each request needs the random token embedded in the page (X-Oncue-Token header),
+and requests for other host names are refused.
+  POST /api/action {"action": "answer|clarify|recap|followup"}  appends "[HH:MM:SS] ACTION: recap" to the
+       transcript; watch.sh passes it to the agent like a question.
+  POST /api/mode {"mode": "interview"}                          writes mode.txt (same as scripts/mode.sh).
 Usage: python dashboard.py [--port 8765]   (or ONCUE_PORT)
 """
 import argparse
 import datetime as dt
+import hmac
 import json
 import os
 import re
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HOME = Path(os.environ.get("ONCUE_HOME") or Path.home() / "oncue")
+SKILL_DIR = Path(__file__).resolve().parent.parent
 PENDING_FOR = 120  # seconds a heard question shows as "answer coming" before it counts as skipped
+TOKEN = secrets.token_urlsafe(24)  # new for every start; the page sends it back with each POST
+ACTIONS = ("answer", "clarify", "recap", "followup")
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+MODE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>oncue</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
+<meta name="oncue-token" content="__ONCUE_TOKEN__">
 <style>
 :root{--bg:#0b0d12;--panel:#12151c;--panel2:#171b24;--line:#232836;--ink:#eceef3;--ink2:#b9bfcc;--muted:#7d8597;
 --accent:#8ea2ff;--accent2:#b18cff;--me:#6fdcae;--them:#f2c46b;--ok:#3fd68a;--warn:#f2c46b;--r:16px}
@@ -66,7 +82,7 @@ kbd{font:11px ui-monospace,monospace;padding:1px 5px;border-radius:5px;border:1p
 @media(min-width:900px){.grid{grid-template-columns:1fr 1.25fr}}
 .qa{padding:12px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:4px 10px}
 .qa:first-child{border-top:0;padding-top:2px}.qa .q{color:var(--muted);font-size:13px;grid-column:1}
-.qa .s{grid-column:1;color:var(--ink)}.qa .copy{grid-column:2;grid-row:1/3;align-self:center;padding:4px 9px;font-size:12px}
+.qa .s{grid-column:1;color:var(--ink);white-space:pre-wrap}.qa .copy{grid-column:2;grid-row:1/3;align-self:center;padding:4px 9px;font-size:12px}
 .list{max-height:62vh;overflow:auto}
 #tx{max-height:62vh;overflow:auto;scroll-behavior:auto;padding-right:4px}
 .ln{display:grid;grid-template-columns:66px 52px 1fr;gap:8px;padding:5px 0;border-top:1px solid #ffffff07;font-size:14px}
@@ -78,11 +94,20 @@ kbd{font:11px ui-monospace,monospace;padding:1px 5px;border-radius:5px;border:1p
 .jump{display:none;position:sticky;bottom:0;margin:8px auto 0;padding:6px 12px;border-radius:999px;background:var(--accent);color:#0b0d12;border:0;font-weight:650;font-size:12.5px}
 .jump.show{display:block}
 .foot{color:var(--muted);font-size:12px;text-align:center;padding:4px 0 10px}
+.pill select{font:inherit;color:var(--ink);font-weight:600;background:transparent;border:0;padding:0;cursor:pointer}
+.pill select option{background:var(--panel);color:var(--ink)}
+.pill select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.act{padding:7px 13px;border-radius:10px;background:#ffffff0d;border:1px solid var(--line);font-size:13.5px;color:var(--ink)}
+.act:hover{background:#ffffff16;border-color:#3a4256}.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.act:disabled{opacity:.45;cursor:default}
+.actmsg{font-size:12.5px}
 /* Compact: the answer only, for a narrow window beside the call. */
 body.compact .wrap{max-width:none;padding:10px;gap:10px}
 body.compact .grid,body.compact .foot,body.compact .hide-compact{display:none}
 body.compact .now{padding:16px 18px}
 body.compact .answer{font-size:clamp(20px,5.2vw,28px)}
+body.compact .act{padding:6px 10px;font-size:13px}
 @media(max-width:560px){.ln{grid-template-columns:58px 46px 1fr}.now{padding:18px}.wrap{padding:12px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
@@ -93,16 +118,24 @@ body.compact .answer{font-size:clamp(20px,5.2vw,28px)}
     <span class="pill" id="status"><span class="dot"></span><b id="stText">Connecting</b><span id="sess" class="hide-compact"></span></span>
     <span class="pill hide-compact" title="Speech model">Model <b id="model">–</b></span>
     <span class="pill" title="Questions detected this meeting">Questions <b id="qcount">0</b></span>
+    <label class="pill" title="Answer style for this call (scripts/mode.sh)">Mode <select id="mode" aria-label="Mode"><option>meeting</option></select></label>
     <button class="btn" id="soundBtn" aria-pressed="false" title="Soft sound when a new answer arrives (S)">Sound off</button>
     <button class="btn" id="compactBtn" aria-pressed="false" title="Answer only, for a small window (C)">Compact <kbd>C</kbd></button>
   </div>
 </header>
 
 <section class="card now" id="now" aria-live="polite">
-  <div class="pending" id="pending"><div class="h"><span class="spin"></span>Question heard… answer coming</div><div class="t" id="pendingQ"></div></div>
+  <div class="pending" id="pending"><div class="h"><span class="spin"></span><span id="pendingH">Question heard… answer coming</span></div><div class="t" id="pendingQ"></div></div>
   <div class="label"><span>Suggested answer</span><button class="copy" id="copyMain" hidden>Copy</button></div>
   <div class="qline" id="nq" hidden></div>
   <div class="answer empty" id="na">Waiting for a question…</div>
+  <div class="actions" role="group" aria-label="Quick actions">
+    <button class="act" data-action="answer" title="Answer the latest thing they asked, even without an alert (A)">Answer <kbd>A</kbd></button>
+    <button class="act" data-action="clarify" title="What they just asked, in plain words, and what they probably want (K)">Clarify <kbd>K</kbd></button>
+    <button class="act" data-action="recap" title="The last 5 minutes in a few bullets (R)">Recap <kbd>R</kbd></button>
+    <button class="act" data-action="followup" title="One or two good questions to ask them (F)">Follow-up <kbd>F</kbd></button>
+    <span class="actmsg muted" id="actmsg" aria-live="polite"></span>
+  </div>
 </section>
 
 <div class="grid">
@@ -112,10 +145,13 @@ body.compact .answer{font-size:clamp(20px,5.2vw,28px)}
     <div id="tx"><span class="muted">Nothing yet</span></div>
     <button class="jump" id="jump">Paused · jump to live ↓</button></section>
 </div>
-<div class="foot">Runs on this computer only · <kbd>C</kbd> compact · <kbd>S</kbd> sound · <kbd>Y</kbd> copy answer</div>
+<div class="foot">Runs on this computer only · <kbd>C</kbd> compact · <kbd>S</kbd> sound · <kbd>Y</kbd> copy answer ·
+  <kbd>A</kbd> answer · <kbd>K</kbd> clarify · <kbd>R</kbd> recap · <kbd>F</kbd> follow-up</div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
+const TOKEN=document.querySelector('meta[name="oncue-token"]').content;
+const NAMES={answer:'Answer',clarify:'Clarify',recap:'Recap',followup:'Follow-up'};
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 let lastAnswerKey=null,lastTxKey='',follow=true,soundOn=store.get('ma.sound')==='1',ctx=null,firstLoad=true;
 
@@ -134,8 +170,20 @@ $('compactBtn').onclick=()=>setCompact(!document.body.classList.contains('compac
 $('soundBtn').onclick=()=>setSound(!soundOn);
 $('copyMain').onclick=()=>copy($('na').textContent,$('copyMain'));
 document.addEventListener('pointerdown',()=>{if(ctx&&ctx.state==='suspended')ctx.resume()});
-document.addEventListener('keydown',e=>{if(e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target.tagName))return;const k=e.key.toLowerCase();
-  if(k==='c'){setCompact(!document.body.classList.contains('compact'))}else if(k==='s'){setSound(!soundOn)}else if(k==='y'&&!$('copyMain').hidden){copy($('na').textContent,$('copyMain'))}});
+// POST with the page's token. A 403 means the dashboard was restarted (new token): reload the page.
+async function post(path,body){const r=await fetch(path,{method:'POST',cache:'no-store',
+  headers:{'Content-Type':'application/json','X-Oncue-Token':TOKEN},body:JSON.stringify(body)});
+  if(r.status===403){location.reload();throw new Error('Reloading')}
+  let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('Error '+r.status));return j}
+function say(msg){const m=$('actmsg');m.textContent=msg;clearTimeout(say.t);say.t=setTimeout(()=>m.textContent='',4000)}
+async function act(name){const b=document.querySelector('[data-action="'+name+'"]');if(b&&b.disabled)return;
+  try{await post('/api/action',{action:name});say(NAMES[name]+' asked…')}catch(e){say(e.message)}tick()}
+document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));
+$('mode').onchange=async e=>{try{await post('/api/mode',{mode:e.target.value});say('Mode: '+e.target.value)}catch(err){say(err.message)}tick()};
+const KEYS={a:'answer',k:'clarify',r:'recap',f:'followup'};
+document.addEventListener('keydown',e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;const k=e.key.toLowerCase();
+  if(k==='c'){setCompact(!document.body.classList.contains('compact'))}else if(k==='s'){setSound(!soundOn)}else if(k==='y'&&!$('copyMain').hidden){copy($('na').textContent,$('copyMain'))}
+  else if(KEYS[k]){act(KEYS[k])}});
 const tx=$('tx');
 tx.addEventListener('scroll',()=>{follow=tx.scrollHeight-tx.scrollTop-tx.clientHeight<30;$('jump').classList.toggle('show',!follow)});
 $('jump').onclick=()=>{follow=true;tx.scrollTop=tx.scrollHeight;$('jump').classList.remove('show')};
@@ -145,8 +193,15 @@ function render(s){
   const live=s.live;$('status').classList.toggle('live',live);
   $('stText').textContent=live?'Listening':(s.session?'Stopped':'Not started');
   $('sess').textContent=s.session?' · '+s.session:'';$('model').textContent=s.model||'–';$('qcount').textContent=s.questions_count;
-  // Pending question
-  const p=s.pending;$('pending').classList.toggle('show',!!p);$('now').classList.toggle('waiting',!!p&&s.answers.length>0);if(p)$('pendingQ').textContent=p.t+' · '+p.text;
+  // Mode (the list is rebuilt only when it changes; the value is left alone while the menu is in use)
+  const sel=$('mode'),opts=(s.modes||[]).join('|');
+  if(sel.dataset.opts!==opts){sel.innerHTML='';(s.modes||[]).forEach(n=>sel.append(new Option(n,n)));sel.dataset.opts=opts}
+  if(document.activeElement!==sel)sel.value=s.mode;
+  document.querySelectorAll('[data-action]').forEach(b=>b.disabled=!live);
+  // Pending question or quick action
+  const p=s.pending;$('pending').classList.toggle('show',!!p);$('now').classList.toggle('waiting',!!p&&s.answers.length>0);
+  if(p){const isAct=p.who==='ACTION';$('pendingH').textContent=isAct?(NAMES[p.text]||p.text)+' asked… coming':'Question heard… answer coming';
+    $('pendingQ').textContent=isAct?p.t:p.t+' · '+p.text}
   // Latest answer
   const a=s.answers;
   if(a.length){const n=a[a.length-1],key=n.time+'|'+n.q+'|'+n.say;
@@ -179,6 +234,7 @@ tick();setInterval(tick,1500);
 </script></body></html>"""
 
 LINE = re.compile(r"^\[(\d\d:\d\d:\d\d)\] (ME|THEM): (.*)$")
+QLINE = re.compile(r"^\[(\d\d:\d\d:\d\d)\] (THEM|ACTION): (.*)$")  # questions.log: questions and quick actions
 QA = re.compile(r"- \*\*Q \(([^)]*)\):\*\* (.*?)\n\s+\*\*Say:\*\* (.*?)(?:\n\n|\Z)", re.S)
 
 
@@ -196,28 +252,54 @@ def secs(hms):
     return h * 3600 + m * 60 + s
 
 
-def read_lines(path, limit):
+def read_lines(path, limit, pattern=LINE):
     out = []
     if path.exists():
         for raw in path.read_text(errors="ignore").splitlines()[-limit:]:
-            m = LINE.match(raw)
+            m = pattern.match(raw)
             if m:
                 out.append({"t": m[1], "who": m[2], "text": m[3]})
     return out
 
 
+def list_modes():
+    """Mode names: built-in (skill's modes/) plus the user's own ($ONCUE_HOME/modes/)."""
+    names = set()
+    for d in (SKILL_DIR / "modes", HOME / "modes"):
+        if d.is_dir():
+            names.update(p.stem for p in d.glob("*.md") if MODE_NAME.match(p.stem))
+    return sorted(names)
+
+
+def current_mode():
+    try:
+        m = (HOME / "mode.txt").read_text().strip()
+    except OSError:
+        m = ""
+    return m if m in list_modes() else "meeting"
+
+
+def latest_transcript():
+    try:
+        return Path((HOME / "sessions" / "LATEST").read_text().strip())
+    except OSError:
+        return None
+
+
 def state():
     empty = {"live": False, "session": "", "model": "", "lines": [], "answers": [], "questions": [],
-             "questions_count": 0, "pending": None}
-    try:
-        f = Path((HOME / "sessions" / "LATEST").read_text().strip())
-    except OSError:
+             "questions_count": 0, "actions_count": 0, "pending": None, "mode": current_mode(), "modes": list_modes()}
+    f = latest_transcript()
+    if f is None:
         return empty
     folder = f.parent
     lines = read_lines(f, 300)
     ans_file = folder / "answers.md"
-    answers = [{"time": t, "q": q.strip(), "say": s.strip()} for t, q, s in QA.findall(ans_file.read_text())] if ans_file.exists() else []
-    questions = read_lines(folder / "questions.log", 10_000)
+    # Multi-line answers (a recap) have their continuation lines indented in answers.md.
+    answers = [{"time": t, "q": q.strip(), "say": re.sub(r"\n[ \t]+", "\n", s.strip())}
+               for t, q, s in QA.findall(ans_file.read_text())] if ans_file.exists() else []
+    alerts = read_lines(folder / "questions.log", 10_000, QLINE)
+    questions = [a for a in alerts if a["who"] == "THEM"]
     try:
         model = json.loads((folder / "session.json").read_text()).get("model", "")
     except (OSError, ValueError):
@@ -225,8 +307,8 @@ def state():
     # The newest heard question counts as pending until an answer is written after it, or it gets old
     # (Claude skips small talk without answering).
     pending = None
-    if questions:
-        q = questions[-1]
+    if alerts:
+        q = alerts[-1]
         now = secs(dt.datetime.now().strftime("%H:%M:%S"))
         age = (now - secs(q["t"])) % 86400
         answered = answers and (secs(answers[-1]["time"]) - secs(q["t"])) % 86400 < 43200
@@ -234,22 +316,82 @@ def state():
             pending = q
     live = pid_alive(HOME / "run" / "listen.pid")
     return {"live": live, "session": folder.name, "model": model, "lines": lines, "answers": answers,
-            "questions": questions[-50:], "questions_count": len(questions), "pending": pending}
+            "questions": questions[-50:], "questions_count": len(questions),
+            "actions_count": len(alerts) - len(questions), "pending": pending,
+            "mode": current_mode(), "modes": list_modes()}
+
+
+def add_action(action):
+    """Append a quick action to the live transcript. Returns (http code, reply)."""
+    f = latest_transcript()
+    if f is None or not f.exists():
+        return 409, {"error": "No meeting running"}
+    if not pid_alive(HOME / "run" / "listen.pid"):
+        return 409, {"error": "Not listening"}
+    line = f"[{dt.datetime.now():%H:%M:%S}] ACTION: {action}\n"
+    with open(f, "a") as out:
+        out.write(line)  # one write, so it never lands inside a line the listener is writing
+    return 200, {"ok": True, "line": line.strip()}
+
+
+def set_mode(name):
+    if not isinstance(name, str) or name not in list_modes():
+        return 400, {"error": "Unknown mode"}
+    (HOME / "mode.txt").write_text(name + "\n")
+    return 200, {"ok": True, "mode": name}
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path.startswith("/api/state"):
-            body, ctype, code = json.dumps(state()).encode(), "application/json", 200
-        elif self.path in ("/", "/index.html") or self.path.startswith("/?"):
-            body, ctype, code = PAGE.encode(), "text/html; charset=utf-8", 200
-        else:
-            body, ctype, code = b"not found", "text/plain", 404
+    def reply(self, code, body, ctype="application/json"):
+        if isinstance(body, dict):
+            body = json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def local_host(self):
+        """Refuse other host names, so a web page cannot reach this server through DNS rebinding."""
+        host = (self.headers.get("Host") or "").strip().lower()
+        name = host[1:].split("]")[0] if host.startswith("[") else host.rsplit(":", 1)[0]
+        return name in LOCAL_HOSTS
+
+    def do_GET(self):
+        if not self.local_host():
+            self.reply(403, b"forbidden", "text/plain")
+        elif self.path.startswith("/api/state"):
+            self.reply(200, state())
+        elif self.path in ("/", "/index.html") or self.path.startswith("/?"):
+            self.reply(200, PAGE.replace("__ONCUE_TOKEN__", TOKEN).encode(), "text/html; charset=utf-8")
+        else:
+            self.reply(404, b"not found", "text/plain")
+
+    def do_POST(self):
+        if self.path not in ("/api/action", "/api/mode"):
+            return self.reply(404, {"error": "Not found"})
+        origin = self.headers.get("Origin")
+        token = (self.headers.get("X-Oncue-Token") or "").encode("utf-8", "replace")
+        if (not self.local_host() or (origin and urlsplit(origin).hostname not in LOCAL_HOSTS)
+                or not hmac.compare_digest(token, TOKEN.encode())):
+            return self.reply(403, {"error": "Forbidden: reload the page"})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= length <= 4096:
+                return self.reply(413, {"error": "Too large"})
+            data = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            return self.reply(400, {"error": "Bad request"})
+        if not isinstance(data, dict):
+            return self.reply(400, {"error": "Bad request"})
+        if self.path == "/api/action":
+            action = data.get("action")
+            if action not in ACTIONS:
+                return self.reply(400, {"error": "Unknown action"})
+            self.reply(*add_action(action))
+        else:
+            self.reply(*set_mode(data.get("mode")))
 
     def log_message(self, *args):
         pass

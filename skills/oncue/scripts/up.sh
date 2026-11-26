@@ -2,9 +2,14 @@
 # Starts everything detached and returns at once: the listener, the question watcher (writes questions.log)
 # and the live dashboard. For agents that cannot keep a command running in the background or stream its
 # output (Cursor, Codex, Gemini CLI, Copilot, ...). Then loop on next-question.sh.
-# Extra arguments go to listen.py, e.g. --no-mic. Logs: $ONCUE_HOME/run/*.log
+# --answer also starts the standalone answerer (answer.py: your own model, e.g. Ollama, no coding agent
+# needed). Other arguments go to listen.py, e.g. --no-mic. Logs: $ONCUE_HOME/run/*.log
 source "$(dirname "$0")/_lib.sh"
 S="$SKILL_DIR/scripts"
+ANSWER=0; LISTEN_ARGS=()
+for a in "$@"; do
+  if [ "$a" = "--answer" ]; then ANSWER=1; else LISTEN_ARGS+=("$a"); fi
+done
 [ -x "$HOME_DIR/.venv/bin/python" ] || { echo "not set up yet: run scripts/setup.sh"; exit 1; }
 
 if alive listen; then
@@ -12,7 +17,7 @@ if alive listen; then
 else
   rm -f "$HOME_DIR/sessions/LATEST"
   stop_pid watch > /dev/null   # a watcher left from an earlier meeting would follow the old transcript
-  nohup "$HOME_DIR/.venv/bin/python" "$S/listen.py" "$@" > "$RUN_DIR/listen.log" 2>&1 < /dev/null &
+  nohup "$HOME_DIR/.venv/bin/python" "$S/listen.py" "${LISTEN_ARGS[@]}" > "$RUN_DIR/listen.log" 2>&1 < /dev/null &
   echo "listener: started"
 fi
 
@@ -28,6 +33,15 @@ if alive dashboard; then
 else
   nohup python3 "$S/dashboard.py" > "$RUN_DIR/dashboard.log" 2>&1 < /dev/null &
   echo "dashboard: started"
+fi
+
+if [ "$ANSWER" = 1 ]; then
+  if alive answer; then
+    echo "answerer: already running"
+  else
+    nohup python3 "$S/answer.py" > /dev/null 2>> "$RUN_DIR/answer.log" < /dev/null &
+    echo "answerer: started (${ONCUE_PROVIDER:-ollama}; log $RUN_DIR/answer.log)"
+  fi
 fi
 
 # Wait (up to 60 s, the speech model loads first) for the new meeting's transcript.

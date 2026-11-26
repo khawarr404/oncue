@@ -1,6 +1,6 @@
 {
   "name": "oncue",
   "description": "Live copilot for meetings, interviews and client calls: local transcription, suggested answers to questions asked of you, and notes.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT"
 }

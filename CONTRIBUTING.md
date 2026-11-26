@@ -27,5 +27,6 @@ Thanks for helping. Small, focused pull requests are easiest to review.
 bash tests/run.sh
 ```
 
-It checks script syntax and runs the question-detection, `next-question.sh` and dashboard tests against a
-fake meeting. No microphone or speech model is needed.
+It checks script syntax and runs the question-detection, `next-question.sh`, dashboard, quick-action, mode
+and answerer tests against a fake meeting and a stand-in model server. No microphone, speech model, Ollama
+or API key is needed, and nothing goes over the network.

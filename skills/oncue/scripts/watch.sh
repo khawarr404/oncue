@@ -12,6 +12,7 @@
 #      place and a project word somewhere else, or
 #   4. says "can you / could you / why / how" and the user spoke in the last 60 s.
 # Everything else (chatter between other people) is ignored.
+# ACTION lines (quick actions the dashboard writes, e.g. "[10:05:00] ACTION: recap") always pass through.
 source "$(dirname "$0")/_lib.sh"
 words() { [ -f "$1" ] && tr ',\n' '||' < "$1" | tr -s '|' | sed 's/^|//; s/|$//'; }
 NAMES="${ONCUE_NAME:-$(words "$HOME_DIR/name.txt")}"
@@ -50,6 +51,8 @@ tail -n0 -F --pid=$$ "$F" 2>/dev/null | awk $AWK_OPTS -v names="$NAMES" -v topic
   }
   function secs(t) { return substr(t, 2, 2) * 3600 + substr(t, 5, 2) * 60 + substr(t, 8, 2) }
   BEGIN { last_me = -1 }
+  # Quick actions from the dashboard ("[10:05:00] ACTION: recap") always pass straight through.
+  /^\[[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\] ACTION: / { print; fflush(); print >> qlog; fflush(qlog); next }
   /^\[[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\] ME: / { last_me = secs($1); next }
   /^\[[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\] THEM: / {
     text = substr($0, index($0, "THEM: ") + 6); p = plain(text)

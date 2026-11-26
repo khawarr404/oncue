@@ -18,8 +18,8 @@ cleanup() {
 trap cleanup EXIT
 
 # 1. Syntax
-for f in "$S"/*.sh "$REPO"/install.sh "$REPO"/tests/run.sh; do bash -n "$f" || fail "syntax $f"; done
-python3 -m py_compile "$S/listen.py" "$S/dashboard.py" && pass "syntax" || fail "python syntax"
+for f in "$S"/*.sh "$REPO"/install.sh "$REPO"/tests/*.sh; do bash -n "$f" || fail "syntax $f"; done
+python3 -m py_compile "$S/listen.py" "$S/dashboard.py" "$S/answer.py" && pass "syntax" || fail "python syntax"
 
 # 2. Fake meeting: a session folder, LATEST pointer, and a stand-in listener process.
 H="$ONCUE_HOME"; SESSION="$H/sessions/2026-01-01-1000"; T="$SESSION/transcript.txt"
@@ -84,5 +84,11 @@ curl -s "127.0.0.1:$PORT/api/state" | grep -q '"live": false' && pass "dashboard
 
 # 6. Real up.sh / listen.py / stop.sh with stand-in recorder and speech model.
 bash "$REPO/tests/test_listener.sh" || FAIL=1
+
+# 7. Quick actions and modes (dashboard POST endpoints, watch.sh, mode.sh).
+bash "$REPO/tests/test_actions_modes.sh" || FAIL=1
+
+# 8. Standalone answerer against a stand-in model server.
+bash "$REPO/tests/test_answer.sh" || FAIL=1
 
 [ "$FAIL" = 0 ] && echo "all tests passed" || { echo "some tests failed"; exit 1; }

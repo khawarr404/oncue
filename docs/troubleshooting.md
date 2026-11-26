@@ -10,4 +10,8 @@
 | Dashboard says "Dashboard offline" | Run `python3 skills/oncue/scripts/dashboard.py`; port in use: `--port 8766`. |
 | `next-question.sh` prints a watcher warning | Run `scripts/up.sh` again; it only starts what is missing. |
 | No pop-ups | Install `notify-send` (`libnotify-bin`). Answers still show in the chat and dashboard. |
+| Quick-action button says "Not listening" | The listener is stopped; start oncue again. |
+| Dashboard page reloads when I press a button | The dashboard was restarted and the page had the old token; it reloads to get the new one. |
+| No answers with `up.sh --answer` | Read `~/oncue/run/answer.log`. Ollama: is `ollama serve` running and the model pulled (`ollama pull llama3.2`)? Check with `python3 skills/oncue/scripts/answer.py --test`. |
+| Answerer answers too slowly | Use a smaller model (`ONCUE_LLM_MODEL=llama3.2:1b`) or a hosted provider. |
 | Skill not found by my agent | Check the folder for your tool in [setup.md](setup.md), and that the link points to the repo's `skills/oncue`. |

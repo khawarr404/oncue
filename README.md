@@ -10,7 +10,8 @@ Copilot, Windsurf** and any other agent that can run shell commands.
 
 > **Private by design.** Audio is transcribed locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
 > No audio is uploaded. Transcripts stay in `~/oncue`. (The agent you use reads the transcript
-> to write answers, so text goes wherever your agent's model runs.)
+> to write answers, so text goes wherever your agent's model runs. With the built-in answerer and Ollama,
+> nothing leaves your computer at all; see [Own model](#own-model-ollama-or-an-api).)
 
 ## Features
 
@@ -27,12 +28,25 @@ Copilot, Windsurf** and any other agent that can run shell commands.
 - **Desktop pop-up** for every answer, plus a **live dashboard** at `http://127.0.0.1:8765`: the
   question just heard, the answer in large type with a copy button, earlier answers and the transcript.
   Press `C` for a compact view beside the call, `S` for a sound cue, `Y` to copy.
+- **Quick actions** on the dashboard, also in compact view: **Answer** (`A`, the latest thing they asked,
+  even if no alert fired), **Clarify** (`K`, what they just asked in plain words), **Recap** (`R`, the last
+  5 minutes in bullets), **Follow-up** (`F`, good questions to ask them).
+- **Modes** that set how answers sound: `meeting` (default), `interview` (only your real experience, STAR
+  for behavioural questions), `sales`, `client`, `standup`, `negotiation` (coaching from your own targets).
+  Switch by saying *"interview mode"*, in the dashboard, or with `scripts/mode.sh`. Add your own in
+  `~/oncue/modes/`.
+- **Prep for a call**: give your agent your CV, the job ad or agenda, the company and who you are meeting;
+  it researches them (if it has web tools) and writes `prep.md` with likely questions, answers from your
+  real material and questions to ask, then sets the mode.
+- **Own model, no coding agent needed**: `up.sh --answer` runs a small answerer with a local
+  [Ollama](https://ollama.com) model (fully offline) or the Anthropic, OpenAI or any OpenAI-compatible API.
 - **Meeting notes** at the end: summary, decisions, actions with owners, open questions, and every
   question you were asked.
 - **Learns your vocabulary**: names and jargon in `vocab.txt` steer the speech model's spelling.
 - **Paste mode** (`oncue-paste`) for macOS, Windows or plain chat apps: paste a question, get
   talking points in under 120 words.
-- Small and hackable: bash, awk and two Python files. No server, no account, MIT licence.
+- Small and hackable: bash, awk and a few standard-library Python files. No cloud service, no account,
+  MIT licence.
 
 ## Requirements
 
@@ -59,9 +73,12 @@ Then, in your agent:
 
 1. *"Set up oncue."* It fills `~/oncue/CONTEXT.md` with you (your role, the project,
    people, numbers you are happy to say) and asks for your name and jargon.
-2. Just before the call: *"Start oncue."* (Add *"I'm on speakers"* if you have no headphones.)
-3. Open `http://127.0.0.1:8765` next to the call.
-4. After the call: *"Stop oncue."* Notes land in `~/oncue/sessions/<date-time>/notes.md`.
+2. Optional, before an important call: *"Prep for my call"* (or *"prep for my interview at ..."*) with
+   your CV, the job ad or agenda and who you are meeting.
+3. Just before the call: *"Start oncue."* (Add *"I'm on speakers"* if you have no headphones, or
+   *"interview mode"* to switch mode.)
+4. Open `http://127.0.0.1:8765` next to the call.
+5. After the call: *"Stop oncue."* Notes land in `~/oncue/sessions/<date-time>/notes.md`.
 
 Per-tool install details (plugin marketplace, Cursor, Codex, Gemini CLI, Copilot, Windsurf, `npx skills`):
 **[docs/setup.md](docs/setup.md)**.
@@ -72,6 +89,7 @@ Per-tool install details (plugin marketplace, Cursor, Codex, Gemini CLI, Copilot
 |---|---|---|
 | Claude Code | Streams `watch.sh` through the Monitor tool: instant | Primary path (the original skill was built on it) |
 | Cursor, Codex, Gemini CLI, Copilot, Windsurf | `up.sh`, then loops on `next-question.sh` (blocks until a question arrives; none are lost between calls) | Should work; not yet tested in a real meeting. Reports welcome |
+| No coding agent | `up.sh --answer`: the built-in answerer with Ollama or an API | Tested against a stand-in server; reports welcome |
 | Any chat app (claude.ai, ChatGPT, ...) | Paste mode: you paste the question | Works anywhere |
 
 ## Your files
@@ -84,14 +102,18 @@ Everything lives in `~/oncue` (change with `ONCUE_HOME`):
 | `name.txt` | Line 1: your first name. Then one mis-hearing per line (`Siobhan`, `Shivon`, ...). |
 | `vocab.txt` | Names, products and jargon, comma separated. Spelling hint for the speech model. |
 | `topics.txt` | Optional project words; a question containing one always alerts. |
+| `prep.md` | Prep for the next call (written by *"prep for my call"*). |
+| `mode.txt` | The current mode (missing means `meeting`). |
+| `modes/<name>.md` | Your own modes, or your versions of built-in ones. |
 | `sessions/<date-time>/` | `transcript.txt`, `questions.log`, `answers.md`, `notes.md` for each meeting. |
 
 ## How it works
 
 ```
-speakers ─┐                     ┌─> transcript.txt ─> watch.sh ─> questions.log ─┬─> agent writes answer
+speakers ─┐                     ┌─> transcript.txt ─> watch.sh ─> questions.log ─┬─> agent (or answer.py) writes answer
           ├─ pw-record ─> listen.py (faster-whisper)                            │    └─> notify.sh: pop-up + answers.md
 mic ──────┘                                                                     └─> dashboard.py (127.0.0.1:8765)
+dashboard quick actions (Answer, Clarify, Recap, Follow-up) ─> "ACTION: recap" lines in transcript.txt
 ```
 
 More in [docs/how-it-works.md](docs/how-it-works.md): alert rules, speech model benchmark, settings.
@@ -107,9 +129,39 @@ More in [docs/how-it-works.md](docs/how-it-works.md): alert rules, speech model 
 | `ONCUE_PORT` | `8765` | Dashboard port |
 | `ONCUE_NAME` | from `name.txt` | Override the name list (`Sam|Sem`) |
 | `ONCUE_NO_POPUP` | unset | Set to skip desktop pop-ups |
+| `ONCUE_PROVIDER` | `ollama` | Answerer (`up.sh --answer`): `ollama`, `anthropic` or `openai` |
+| `ONCUE_LLM_MODEL` | `llama3.2` / `claude-haiku-5-5` / `gpt-4o-mini` | Answerer model (default per provider) |
+| `ONCUE_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama server |
+| `ANTHROPIC_API_KEY` | unset | For `ONCUE_PROVIDER=anthropic` |
+| `OPENAI_API_KEY` | unset | For `ONCUE_PROVIDER=openai` (optional for local compatible servers) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint, e.g. `https://openrouter.ai/api/v1` |
+| `ONCUE_LLM_TIMEOUT` | `30` | Seconds before an answer request gives up |
 
 Start options: `--no-mic` (on speakers, to avoid hearing others twice), `--language de` (with a
-multilingual model), `--model base.en`.
+multilingual model), `--model base.en`, `--answer` (`up.sh` only: also start the answerer).
+
+## Own model (Ollama or an API)
+
+Without a coding agent, or to keep answers off the cloud, oncue can answer by itself:
+
+```bash
+ollama pull llama3.2                         # once; https://ollama.com
+skills/oncue/scripts/up.sh --answer          # listener, watcher, dashboard and answerer
+python3 skills/oncue/scripts/answer.py --test  # optional: check your settings with one sample question
+skills/oncue/scripts/stop.sh                 # after the call
+```
+
+The answerer reads `CONTEXT.md`, `prep.md`, the current mode and the last lines of the transcript, skips
+questions that are not for you, and handles the dashboard's quick actions. Answers show in the dashboard
+and as pop-ups. Errors go to `~/oncue/run/answer.log`. Meeting notes still need an agent (or paste the
+transcript into any chat).
+
+**Where your text goes:**
+
+- `ollama` (default): the model runs on your computer. Fully offline; nothing leaves the machine.
+- `anthropic`, `openai` or any OpenAI-compatible endpoint (OpenRouter, ...): the transcript lines, your
+  `CONTEXT.md`, `prep.md` and the mode text are sent to that provider with each question. Use it only if
+  that is acceptable for the call. API keys are read from the environment and never written to logs.
 
 ## Consent
 
@@ -122,8 +174,16 @@ See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Contributing
 
-Pull requests welcome, especially macOS and Windows audio capture. Run `bash tests/run.sh` first.
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome, especially macOS and Windows audio capture and reports from Cursor, Codex,
+Gemini CLI, Copilot and Windsurf users.
+
+1. **Fork** this repo and create a branch.
+2. Make your change and run `bash tests/run.sh` (no microphone or speech model needed).
+3. Open a **pull request**. CI runs the tests; the maintainer reviews and merges.
+
+Bugs and ideas: [open an issue](https://github.com/khawarr404/oncue/issues/new/choose). Security problems:
+report privately (see [SECURITY.md](SECURITY.md)). Details in [CONTRIBUTING.md](CONTRIBUTING.md); please
+follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Licence
 

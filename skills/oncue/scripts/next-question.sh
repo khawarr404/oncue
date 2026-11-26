@@ -6,6 +6,8 @@
 # Usage: next-question.sh [timeout_seconds]   (default 240)
 # Prints one of:
 #   QUESTION [10:02:13] THEM: why did you pick this tool?   (one line per question; several if they piled up)
+#   QUESTION [10:02:20] ACTION: recap                       (a quick action from the dashboard: answer, clarify,
+#                                                            recap or followup; see SKILL.md)
 #   NONE     nothing new before the timeout: call again
 #   STOPPED  the listener is not running: the meeting is over (or was never started)
 # A read position is kept per meeting, so a question that arrives between two calls is never lost.
