@@ -8,3 +8,6 @@ run/
 # Local tool caches
 .base-ast/
 .base/
+
+# Launch and marketing material (kept locally, not published)
+docs/media/
