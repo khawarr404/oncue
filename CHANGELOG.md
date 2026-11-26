@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-26)
 
 - Floating answer window (`scripts/float.py`, `up.sh --float`): a small always-on-top window with the
   latest suggested answer in large text, the question it answers, a status line, "question heard… answer
@@ -10,11 +10,8 @@
 - The dashboard writes its per-start token to `run/dashboard.token` (mode 0600, removed on exit) so local
   programs such as the floating window can use the POST endpoints. Browser protections are unchanged, and
   requests marked `Sec-Fetch-Site: cross-site` are now refused too.
-
 - Ollama: thinking turned off by default (`think: false`) so thinking models such as qwen3 answer
   quickly instead of spending the token budget on reasoning. `ONCUE_OLLAMA_THINK=1` turns it back on.
-
-## 0.2.0 (2026-11-26)
 
 - Quick actions on the dashboard (buttons, also in compact view, and keys `A` `K` `R` `F`): Answer,
   Clarify, Recap, Follow-up. They reach the agent as `ACTION` lines through `watch.sh`, the Monitor
