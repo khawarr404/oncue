@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+# Never commit real meetings
+sessions/
+run/
+# Local tool caches
+.base-ast/
+.base/
