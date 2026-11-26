@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Ollama: thinking turned off by default (`think: false`) so thinking models such as qwen3 answer
+  quickly instead of spending the token budget on reasoning. `ONCUE_OLLAMA_THINK=1` turns it back on.
+
 ## 0.2.0 (2026-11-26)
 
 - Quick actions on the dashboard (buttons, also in compact view, and keys `A` `K` `R` `F`): Answer,

@@ -136,6 +136,7 @@ More in [docs/how-it-works.md](docs/how-it-works.md): alert rules, speech model 
 | `OPENAI_API_KEY` | unset | For `ONCUE_PROVIDER=openai` (optional for local compatible servers) |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint, e.g. `https://openrouter.ai/api/v1` |
 | `ONCUE_LLM_TIMEOUT` | `30` | Seconds before an answer request gives up |
+| `ONCUE_OLLAMA_THINK` | unset | Set to `1` to let thinking models (qwen3, deepseek-r1) reason first; off by default because it is slow |
 
 Start options: `--no-mic` (on speakers, to avoid hearing others twice), `--language de` (with a
 multilingual model), `--model base.en`, `--answer` (`up.sh` only: also start the answerer).

@@ -11,6 +11,7 @@ Providers (ONCUE_PROVIDER):
   openai     OPENAI_API_KEY, OPENAI_BASE_URL (https://api.openai.com/v1, or any OpenAI-compatible endpoint
              such as OpenRouter). Transcript text and your notes are sent to that provider.
 ONCUE_LLM_MODEL sets the model, ONCUE_LLM_TIMEOUT the request timeout in seconds (30).
+ONCUE_OLLAMA_THINK=1 lets Ollama thinking models (qwen3, deepseek-r1) reason first; off by default.
 
 Usage: python3 answer.py           run until stopped (scripts/stop.sh); up.sh --answer starts it detached
        python3 answer.py --test    ask one sample question, print the reply and exit (checks your settings)
@@ -127,6 +128,10 @@ def ask(system, user, max_tokens=250, timeout=None):
                     "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                     # Ollama's default context is small; without this a long cheat sheet is silently cut.
                     "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": max_tokens}}
+            # Thinking models (qwen3, deepseek-r1, ...) would spend the token budget and seconds on reasoning:
+            # turn it off for live answers. ONCUE_OLLAMA_THINK=1 keeps it.
+            if (os.environ.get("ONCUE_OLLAMA_THINK") or "") not in ("1", "true"):
+                body["think"] = False
             return post_json(ollama_url(), body, {}, timeout)["message"]["content"]
         if PROVIDER == "anthropic":
             key = os.environ.get("ANTHROPIC_API_KEY")
